@@ -186,41 +186,35 @@
     color:var(--accent);
     margin-left:4px;
   }
-  #searchInput{
-    flex:1;
-    min-width:0;
-    background:var(--panel);
-    border:1px solid var(--line);
-    border-radius:8px;
-    color:var(--text);
-    font-size:13px;
-    padding:8px 10px;
-    outline:none;
+  .doc-actions{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:16px;
   }
-  #searchInput:focus{border-color:var(--accent-dim);}
-
-  .notes-list{display:flex; flex-direction:column; gap:10px;}
-  .note-card{
-    background:var(--panel);
-    border:1px solid var(--line);
-    border-radius:10px;
-    padding:13px 14px;
+  .doc-container{
+    display:flex;
+    flex-direction:column;
   }
-  .note-date{
+  .doc-entry{
+    padding:14px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .doc-entry:last-child{border-bottom:none;}
+  .doc-timestamp{
     font-family:var(--mono);
     font-size:11px;
     color:var(--accent);
     letter-spacing:.04em;
     margin-bottom:6px;
   }
-  .note-text{
+  .doc-text{
     font-size:14px;
-    line-height:1.5;
+    line-height:1.6;
     color:var(--text);
     white-space:pre-wrap;
-    margin-bottom:10px;
   }
-  .note-actions{display:flex; gap:8px;}
+
   .mini-btn{
     font-size:12px;
     font-family:var(--sans);
@@ -299,10 +293,14 @@
 
   <section class="notes-section">
     <div class="notes-head">
-      <h2>NOTLAR<span class="count" id="noteCount">0</span></h2>
-      <input id="searchInput" type="search" placeholder="Ara...">
+      <h2>TÜM KAYITLAR<span class="count" id="noteCount">0</span></h2>
     </div>
-    <div class="notes-list" id="notesList"></div>
+    <div class="doc-actions" id="docActions">
+      <button class="mini-btn" id="copyAllBtn">Tümünü Kopyala</button>
+      <button class="mini-btn" id="downloadAllBtn">İndir (.txt)</button>
+      <button class="mini-btn danger" id="clearAllBtn">Tümünü Temizle</button>
+    </div>
+    <div class="doc-container" id="docContainer"></div>
     <div class="empty" id="emptyState">Henüz kayıtlı not yok. İlk notunu kaydet.</div>
   </section>
 
@@ -323,10 +321,13 @@
   const statusLabel = document.getElementById('statusLabel');
   const saveBtn = document.getElementById('saveBtn');
   const clearBtn = document.getElementById('clearBtn');
-  const notesList = document.getElementById('notesList');
+  const notesList = document.getElementById('docContainer');
   const noteCount = document.getElementById('noteCount');
   const emptyState = document.getElementById('emptyState');
-  const searchInput = document.getElementById('searchInput');
+  const docActions = document.getElementById('docActions');
+  const copyAllBtn = document.getElementById('copyAllBtn');
+  const downloadAllBtn = document.getElementById('downloadAllBtn');
+  const clearAllBtn = document.getElementById('clearAllBtn');
   const toastEl = document.getElementById('toast');
 
   micBtn.innerHTML = micIconSVG;
@@ -456,7 +457,7 @@
     }
     const id = 'note_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const note = { id: id, text: text, createdAt: new Date().toISOString() };
-    const updated = [note, ...allNotes];
+    const updated = [...allNotes, note];
     const ok = saveNotesToStorage(updated);
     if(!ok){
       showToast('Kaydedilemedi, depolama alanı dolu olabilir.');
@@ -466,7 +467,8 @@
     renderNotes();
     transcriptEl.value = '';
     interimEl.textContent = '';
-    showToast('Not kaydedildi.');
+    showToast('Not eklendi.');
+    setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 50);
   });
 
   function formatDate(iso){
@@ -474,91 +476,87 @@
     return d.toLocaleString('tr-TR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
   }
 
+  function buildCombinedText(){
+    return allNotes.map(n => '[' + formatDate(n.createdAt) + ']\n' + n.text).join('\n\n');
+  }
+
   function renderNotes(){
-    const q = searchInput.value.trim().toLocaleLowerCase('tr-TR');
-    const filtered = q ? allNotes.filter(n => n.text.toLocaleLowerCase('tr-TR').includes(q)) : allNotes;
     noteCount.textContent = String(allNotes.length);
     notesList.innerHTML = '';
 
     if(allNotes.length === 0){
       emptyState.style.display = 'block';
-      emptyState.textContent = 'Henüz kayıtlı not yok. İlk notunu kaydet.';
-      return;
-    }
-    if(filtered.length === 0){
-      emptyState.style.display = 'block';
-      emptyState.textContent = 'Eşleşen not bulunamadı.';
+      docActions.style.display = 'none';
+      notesList.style.display = 'none';
       return;
     }
     emptyState.style.display = 'none';
+    docActions.style.display = 'flex';
+    notesList.style.display = 'flex';
 
-    filtered.forEach(note => {
-      const card = document.createElement('div');
-      card.className = 'note-card';
+    allNotes.forEach(note => {
+      const entry = document.createElement('div');
+      entry.className = 'doc-entry';
 
-      const dateEl = document.createElement('div');
-      dateEl.className = 'note-date';
-      dateEl.textContent = formatDate(note.createdAt);
+      const tsEl = document.createElement('div');
+      tsEl.className = 'doc-timestamp';
+      tsEl.textContent = formatDate(note.createdAt);
 
       const textEl = document.createElement('div');
-      textEl.className = 'note-text';
+      textEl.className = 'doc-text';
       textEl.textContent = note.text;
 
-      const actions = document.createElement('div');
-      actions.className = 'note-actions';
-
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'mini-btn';
-      copyBtn.textContent = 'Kopyala';
-      copyBtn.addEventListener('click', async () => {
-        try{
-          await navigator.clipboard.writeText(note.text);
-          showToast('Kopyalandı.');
-        } catch(err){
-          showToast('Kopyalanamadı.');
-        }
-      });
-
-      const dlBtn = document.createElement('button');
-      dlBtn.className = 'mini-btn';
-      dlBtn.textContent = 'İndir';
-      dlBtn.addEventListener('click', () => {
-        const blob = new Blob([note.text], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'not-' + note.createdAt.slice(0, 10) + '.txt';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'mini-btn danger';
-      delBtn.textContent = 'Sil';
-      delBtn.addEventListener('click', () => {
-        allNotes = allNotes.filter(n => n.id !== note.id);
-        saveNotesToStorage(allNotes);
-        renderNotes();
-        showToast('Not silindi.');
-      });
-
-      actions.appendChild(copyBtn);
-      actions.appendChild(dlBtn);
-      actions.appendChild(delBtn);
-      card.appendChild(dateEl);
-      card.appendChild(textEl);
-      card.appendChild(actions);
-      notesList.appendChild(card);
+      entry.appendChild(tsEl);
+      entry.appendChild(textEl);
+      notesList.appendChild(entry);
     });
   }
 
-  searchInput.addEventListener('input', renderNotes);
+  copyAllBtn.addEventListener('click', async () => {
+    if(allNotes.length === 0){
+      showToast('Kopyalanacak kayıt yok.');
+      return;
+    }
+    try{
+      await navigator.clipboard.writeText(buildCombinedText());
+      showToast('Tüm kayıtlar kopyalandı.');
+    } catch(err){
+      showToast('Kopyalanamadı.');
+    }
+  });
+
+  downloadAllBtn.addEventListener('click', () => {
+    if(allNotes.length === 0){
+      showToast('İndirilecek kayıt yok.');
+      return;
+    }
+    const blob = new Blob([buildCombinedText()], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sesli-not-tum-kayitlar.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  clearAllBtn.addEventListener('click', () => {
+    if(allNotes.length === 0){
+      showToast('Silinecek kayıt yok.');
+      return;
+    }
+    const onay = window.confirm('Tüm kayıtlar silinsin mi? Bu işlem geri alınamaz.');
+    if(!onay) return;
+    allNotes = [];
+    saveNotesToStorage(allNotes);
+    renderNotes();
+    showToast('Tüm kayıtlar silindi.');
+  });
 
   function loadNotes(){
     const loaded = loadNotesFromStorage();
-    loaded.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    loaded.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     allNotes = loaded;
     renderNotes();
   }
