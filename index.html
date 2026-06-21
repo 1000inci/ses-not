@@ -428,7 +428,27 @@
     transcriptEl.focus();
   });
 
-  saveBtn.addEventListener('click', async () => {
+  const STORAGE_KEY = 'sesli_not_kayitlari_v1';
+
+  function loadNotesFromStorage(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch(err){
+      return [];
+    }
+  }
+
+  function saveNotesToStorage(notes){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+      return true;
+    } catch(err){
+      return false;
+    }
+  }
+
+  saveBtn.addEventListener('click', () => {
     const text = transcriptEl.value.trim();
     if(!text){
       showToast('Kaydedilecek metin yok.');
@@ -436,24 +456,17 @@
     }
     const id = 'note_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const note = { id: id, text: text, createdAt: new Date().toISOString() };
-    saveBtn.disabled = true;
-    try{
-      const result = await window.storage.set('notes:' + id, JSON.stringify(note), false);
-      if(!result){
-        showToast('Kaydedilemedi, tekrar deneyin.');
-        saveBtn.disabled = false;
-        return;
-      }
-      allNotes.unshift(note);
-      renderNotes();
-      transcriptEl.value = '';
-      interimEl.textContent = '';
-      showToast('Not kaydedildi.');
-    } catch(err){
-      showToast('Kaydetme sırasında hata oluştu.');
-    } finally {
-      saveBtn.disabled = false;
+    const updated = [note, ...allNotes];
+    const ok = saveNotesToStorage(updated);
+    if(!ok){
+      showToast('Kaydedilemedi, depolama alanı dolu olabilir.');
+      return;
     }
+    allNotes = updated;
+    renderNotes();
+    transcriptEl.value = '';
+    interimEl.textContent = '';
+    showToast('Not kaydedildi.');
   });
 
   function formatDate(iso){
@@ -524,11 +537,9 @@
       const delBtn = document.createElement('button');
       delBtn.className = 'mini-btn danger';
       delBtn.textContent = 'Sil';
-      delBtn.addEventListener('click', async () => {
-        try{
-          await window.storage.delete('notes:' + note.id, false);
-        } catch(err){ /* zaten silinmiş olabilir */ }
+      delBtn.addEventListener('click', () => {
         allNotes = allNotes.filter(n => n.id !== note.id);
+        saveNotesToStorage(allNotes);
         renderNotes();
         showToast('Not silindi.');
       });
@@ -545,30 +556,11 @@
 
   searchInput.addEventListener('input', renderNotes);
 
-  async function loadNotes(){
-    try{
-      const result = await window.storage.list('notes:', false);
-      if(!result || !result.keys || result.keys.length === 0){
-        allNotes = [];
-        renderNotes();
-        return;
-      }
-      const loaded = [];
-      for(const key of result.keys){
-        try{
-          const item = await window.storage.get(key, false);
-          if(item && item.value){
-            loaded.push(JSON.parse(item.value));
-          }
-        } catch(err){ /* anahtar bulunamadıysa atla */ }
-      }
-      loaded.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      allNotes = loaded;
-      renderNotes();
-    } catch(err){
-      emptyState.style.display = 'block';
-      emptyState.textContent = 'Notlar yüklenemedi.';
-    }
+  function loadNotes(){
+    const loaded = loadNotesFromStorage();
+    loaded.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    allNotes = loaded;
+    renderNotes();
   }
 
   loadNotes();
